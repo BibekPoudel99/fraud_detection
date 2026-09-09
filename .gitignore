@@ -1,0 +1,29 @@
+# Secrets — never committed
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Data — large/raw files stay local, never in Git
+data/raw/*.csv
+data/cache/*.parquet
+!data/raw/.gitkeep
+!data/cache/.gitkeep
+
+# Model artifacts — large binaries stay out of Git history
+*.pkl
+*.joblib
+!models/.gitkeep
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
