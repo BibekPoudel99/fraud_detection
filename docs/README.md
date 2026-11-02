@@ -213,16 +213,23 @@ Two of this project's most important tables — `fraud_predictions` and `audit_l
 
 | Entity | Roles with full CRUD | Purpose |
 |---|---|---|
-| **Users** | Admin | Standard account management |
+| **Users** | Admin | Account management — create, edit (role, password reset, activate/deactivate), delete (see the delete rule below) |
 | **Investigation Notes** | Fraud Analyst (own notes), Admin (all) | Case notes attached to a flagged transaction — create/edit/delete freely, since these are working notes, not the audit trail itself |
 | **Watchlist / Flagged Accounts** | Admin, Fraud Analyst | Accounts placed under heightened scrutiny — full CRUD as accounts are added, updated, and removed from watch status |
 
 `fraud_predictions`, `audit_logs`, `model_versions`, and `etl_runs` remain insert-only (with `audit_logs` additionally update-only on its review-status field) by design — an intentional choice, stated explicitly in the report, not an oversight.
 
+**User delete rule (locked, hybrid):** because `fraud_predictions` and `audit_logs` reference users, a blanket hard delete would either break foreign keys or erase the audit trail. So:
+
+- **Account with no activity** (no predictions, notes, watchlist entries or audit rows tied to it) → **hard delete**, row removed.
+- **Account with activity** → **soft delete**: `deleted_at` is set, login is disabled, the record is retained, and the Admin UI states plainly that the account was deactivated rather than erased.
+
+**Customer role:** has no CRUD entity of its own. Customers submit transactions and view their own results only (ownership-checked per 5.12).
+
 ### 5.14 Search/filter, pagination, and reporting
 
-- **Search/filter:** on the transaction/prediction listing (Fraud Analyst and Admin dashboards) — by date range, risk tier (APPROVE/REVIEW/HIGH RISK), transaction ID, or flagged account.
-- **Pagination:** on the same listing, and on the Admin's user-management table.
+- **Search/filter:** on the transaction/prediction listing (Fraud Analyst and Admin dashboards) — by date range, risk tier (APPROVE/REVIEW/HIGH RISK), transaction ID, or flagged account. Also on the **user list** (name/email, role, status), the **investigation notes list** (text, author, linked transaction) and the **watchlist** (account, status, date added).
+- **Pagination:** on the prediction log, the user list, the notes list and the watchlist (server-side, page-size capped).
 - **Report/export:** Admin dashboard provides a filtered CSV/Excel export of predictions and a printable summary report (prediction counts, fraud rate, model-performance snapshot over a selected date range).
 
 ### 5.15 Secrets management
