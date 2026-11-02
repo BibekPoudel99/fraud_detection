@@ -8,12 +8,14 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
 
 # Data — large/raw files stay local, never in Git
 data/raw/*.csv
 data/cache/*.parquet
 !data/raw/.gitkeep
 !data/cache/.gitkeep
+data/
 
 # Model artifacts — large binaries stay out of Git history
 *.pkl
@@ -27,4 +29,4 @@ data/cache/*.parquet
 .DS_Store
 .vscode/
 .idea/
-docs/
+docs/fraud_detection.pdf
