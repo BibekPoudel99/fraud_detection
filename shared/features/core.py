@@ -6,6 +6,10 @@ core-api's Flow C batch path. Nobody re-implements any of this.
 Structural leakage guard: compute_features() is read-only and sees only state
 built from EARLIER events; update_dest_state() runs AFTER scoring. The event
 model has no label field, so isFraud cannot reach the features.
+
+Schema 0.2.0: the origin-side "inbound transfer" features were dropped after EDA
+gate G2 (no fraud cash-out follows an inbound transfer to the same account in the
+training split). State is now read for the RECIPIENT only.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-FEATURE_SCHEMA_VERSION = "0.1.0"  # draft; becomes 1.0.0 when frozen after the EDA gates
+FEATURE_SCHEMA_VERSION = "0.2.0"  # draft; becomes 1.0.0 after the real-data parity run (S1-09)
 
 
 @dataclass(frozen=True)
@@ -27,7 +31,7 @@ class FeatureConfig:
 
 CONFIG = FeatureConfig()
 
-# Detection scope (README): transfer-then-cash-out. Only these types are scored.
+# Scope: PaySim's fraud label appears only on these two types. Only these are scored.
 SCORED_TYPES = frozenset({"TRANSFER", "CASH_OUT"})
 
 FEATURE_NAMES: tuple[str, ...] = (
@@ -43,12 +47,7 @@ FEATURE_NAMES: tuple[str, ...] = (
     "dest_balance_error",
     "dest_old_balance_zero",
     "dest_new_balance_zero",
-    # stateful: transfer-then-cash-out chain, origin side
-    "orig_inbound_transfer_count_24h",
-    "log_orig_inbound_transfer_sum_24h",
-    "steps_since_orig_last_inbound_transfer",
-    "amount_to_orig_inbound_sum",
-    # stateful: recipient side
+    # stateful, recipient side
     "dest_inbound_transfer_count_24h",
     "dest_has_prior_inbound_transfer",
 )
@@ -132,20 +131,14 @@ def _in_window(state: AccountState, step: int, window: int) -> list[tuple[int, f
 
 def compute_features(
     e: TransactionEvent,
-    orig: AccountState,
     dest: AccountState,
     cfg: FeatureConfig = CONFIG,
 ) -> dict[str, float]:
-    """Read-only. `orig`/`dest` are the states BEFORE this event. Only scored types."""
+    """Read-only. `dest` is the RECIPIENT's state BEFORE this event. Scored types only."""
     if e.type not in SCORED_TYPES:
         raise ValueError(f"type {e.type!r} is out of detection scope; do not score it")
 
-    w = cfg.window_steps
-    o_win = _in_window(orig, e.step, w)
-    o_count = len(o_win)
-    o_sum = sum(a for _, a in o_win)
-    o_since = float(min(e.step - s for s, _ in o_win)) if o_win else float(w)
-    d_count = len(_in_window(dest, e.step, w))
+    d_count = len(_in_window(dest, e.step, cfg.window_steps))
 
     def ratio(num: float, den: float) -> float:
         return min(num / den, cfg.ratio_clip) if den > 0 else 0.0
@@ -161,10 +154,6 @@ def compute_features(
         "dest_balance_error": _signed_log1p(e.oldbalance_dest + e.amount - e.newbalance_dest),
         "dest_old_balance_zero": 1.0 if e.oldbalance_dest == 0 else 0.0,
         "dest_new_balance_zero": 1.0 if e.newbalance_dest == 0 else 0.0,
-        "orig_inbound_transfer_count_24h": float(o_count),
-        "log_orig_inbound_transfer_sum_24h": _log1p_nonneg(o_sum),
-        "steps_since_orig_last_inbound_transfer": o_since,
-        "amount_to_orig_inbound_sum": ratio(e.amount, o_sum),
         "dest_inbound_transfer_count_24h": float(d_count),
         "dest_has_prior_inbound_transfer": 1.0 if dest.inbound_total > 0 else 0.0,
     }
@@ -186,11 +175,11 @@ def process_event(
 ) -> dict[str, float] | None:
     """Score-then-update. Returns features for scored types, else None.
 
-    Used verbatim by the training pass, the Flow A consumer and Flow C.
+    Used verbatim by the training pass and Flow C. The Flow A worker calls
+    compute_features() and update_dest_state() separately (see FEATURE_SPEC section 5).
     """
-    orig = store.get(e.name_orig)
-    dest = store.get(e.name_dest)  # same object as `orig` for a self-transfer; both read BEFORE update
-    features = compute_features(e, orig, dest, cfg) if e.type in SCORED_TYPES else None
+    dest = store.get(e.name_dest)  # read BEFORE the update, so a transfer never sees its own credit
+    features = compute_features(e, dest, cfg) if e.type in SCORED_TYPES else None
     new_dest = update_dest_state(e, dest, cfg)
     if new_dest is not dest:
         store.put(e.name_dest, new_dest)
