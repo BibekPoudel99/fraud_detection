@@ -191,12 +191,17 @@ Run these first in the EDA notebook. Record the numbers in this file (section 9)
 | Gate | Question | How | Rule |
 |---|---|---|---|
 | **G1** | Do origin accounts repeat? | Share of `nameOrig` values appearing in more than one row. | If still ~99.85% distinct: D4 stands. If a material share repeats: add per-origin history features in 0.2.0. |
-| **G2** | Does the transfer-then-cash-out chain exist **at the account level** in this data? | Among `CASH_OUT` rows, the share whose `nameOrig` received a `TRANSFER` in the previous 24 steps, **for fraud rows vs legitimate rows**. | If the share is not materially higher for fraud rows (for example it is near zero for both), features #11 to #14 cannot carry signal. Drop them, keep the rest, and in the report say the label encodes the scope but the account-level chain is not recoverable from PaySim. Do **not** claim FIU red flag 3 as operationalised (section 4). |
+| **G2** | Does the transfer-then-cash-out chain exist **at the account level** in this data? | Among `CASH_OUT` rows **in the train split only**, the share whose `nameOrig` received a `TRANSFER` in the previous 24 steps, **for fraud rows vs legitimate rows**. | If the share is not materially higher for fraud rows (for example it is near zero for both), features #11 to #14 cannot carry signal. Drop them, keep the rest, and in the report say the label encodes the scope but the account-level chain is not recoverable from PaySim. Do **not** claim FIU red flag 3 as operationalised (section 4). |
 | **G3** | Is the CSV in `step` order? | `df["step"].is_monotonic_increasing`. | Must hold; otherwise the whole chronological design is void. |
 | **G4** | Are merchants ever recipients of `TRANSFER`/`CASH_OUT`? | Count `nameDest` starting with `M` in those types. | The secondary notebook I found reports none. If any exist, add `dest_is_merchant`. |
 | **G5** | Self-transfers | Count `nameOrig == nameDest`. | Informational; the function already handles it. |
 | **G6** | Base rates and denominators | Fraud count and rate over **all rows** and over **`TRANSFER` + `CASH_OUT` only**. | Every reported metric states which denominator it uses. The scoped rate is higher than the dataset-wide ~0.13%, and PR-AUC depends on it. |
-| **G7** | `isFlaggedFraud` | Count of 1s, and whether they are all transfers above 200,000. | Confirms the documented rule; informs rule baseline R1. |
+| **G7** | `isFlaggedFraud` | Count of 1s, and whether they are all transfers above 200,000 (all rows); how R1 behaves on the **train** split. | Confirms the documented rule; informs rule baseline R1. |
+
+**How the gates are run (`notebooks/01_eda_and_split.ipynb`).**
+- **Label-free gates** (G1, G3, G4, G5) run on all rows. **Anything that reads `isFraud` to decide a design question (G2, G7, the exploration section) runs on the train split only**, so no feature decision is informed by validation, test or replay labels. G6 only counts rows and frauds per split.
+- **"Material" and "signal" need numbers, so the notebook fixes them in its first cell before any output is seen:** G1 revisits per-origin history if at least 5% of scoped rows have a repeated origin; G2 keeps features 11 to 14 only if at least 5% of fraud cash-outs have an inbound transfer in the previous 24 steps **and** that share is at least 2 times the share among legitimate cash-outs. Change them only before the first run, and commit the change.
+- **Split mechanics:** cut by row position in the original order at about 70 / 15 / 10 / 5 percent (train / validation / test / replay), each cut snapped to the start of a `step` so no step is shared between two splits. No randomness is used. Boundaries are saved to `docs/split_boundaries.json`.
 
 ## 8. Deferred or excluded (with reasons)
 

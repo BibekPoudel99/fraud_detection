@@ -30,7 +30,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 DEFAULT_CSV_PATH = Path("data/raw/paysim.csv")
-DEFAULT_PARQUET_PATH = Path("data/cache/paysim.parquet")
+DEFAULT_PARQUET_PATH = Path("D:/Projects/fraud_detection/data/cache/paysim.parquet")
 
 
 def load_paysim(

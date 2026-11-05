@@ -220,8 +220,8 @@ The schema is also a shared file: this PR contains **only** models and the migra
 
 **Acceptance criteria**
 - [ ] `notebooks/01_eda_and_split.ipynb` runs top to bottom from the Parquet cache.
-- [ ] Gates G1 to G7 each have their question, the computed numbers and the decision taken (using the rule written in the spec).
-- [ ] The split is by **row position in the original order** (~70 / ~10–15 / ~10 / ~5 percent, README 7.1), with the exact boundary row indexes saved to `docs/split_boundaries.json` (small file, committed).
+- [ ] Gates G1 to G7 each have their question, the computed numbers and the decision taken (using the rule written in the spec). **Label-conditioned gates (G2, G7) are computed on the train split only**; the cutoffs in the notebook's first cell are set before the first run and committed.
+- [ ] The split is by **row position in the original order** (about 70 / 15 / 10 / 5 percent, README 7.1), each cut snapped to the start of a `step`, with the exact boundary row indexes saved to `docs/split_boundaries.json` (small file, committed).
 - [ ] Asserted in the notebook: `step` is non-decreasing across the whole frame; the four ranges are contiguous, ordered and do not overlap; every row belongs to exactly one split.
 - [ ] A table of row count, fraud count and fraud rate per split, **both over all rows and over `TRANSFER` + `CASH_OUT` only** (gate G6).
 - [ ] The notebook never fits anything on validation, test or replay data.
