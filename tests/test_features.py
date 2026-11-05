@@ -52,20 +52,23 @@ def row_events(df):
         yield TransactionEvent(**{PAYSIM_COLUMN_MAP[c]: getattr(r, c) for c in PAYSIM_COLUMN_MAP})
 
 
-# 1. hand-computed transfer-then-cash-out chain ------------------------------------
-def test_chain_hand_computed():
+# 1. hand-computed recipient-side features ---------------------------------------------
+def test_recipient_side_hand_computed():
     s = DictStore()
     f1 = process_event(ev(1, "TRANSFER", 100.0, "A", "B", ob=100.0, nb=0.0), s)
+    assert f1["dest_inbound_transfer_count_24h"] == 0.0
     assert f1["dest_has_prior_inbound_transfer"] == 0.0
-    assert f1["orig_inbound_transfer_count_24h"] == 0.0
-    assert f1["steps_since_orig_last_inbound_transfer"] == CONFIG.window_steps
     assert f1["orig_drained"] == 1.0 and f1["amount_to_orig_balance"] == 1.0
-    f2 = process_event(ev(3, "CASH_OUT", 100.0, "B", "X", ob=100.0, nb=0.0), s)
-    assert f2["orig_inbound_transfer_count_24h"] == 1.0
-    assert f2["steps_since_orig_last_inbound_transfer"] == 2.0
-    assert f2["amount_to_orig_inbound_sum"] == 1.0
-    assert f2["log_orig_inbound_transfer_sum_24h"] == pytest.approx(math.log1p(100.0))
-    assert f2["type_is_transfer"] == 0.0
+    assert f1["type_is_transfer"] == 1.0
+    f2 = process_event(ev(3, "TRANSFER", 50.0, "C", "B"), s)
+    assert f2["dest_inbound_transfer_count_24h"] == 1.0
+    assert f2["dest_has_prior_inbound_transfer"] == 1.0
+    f3 = process_event(ev(30, "TRANSFER", 5.0, "D", "B"), s)   # credits at steps 1 and 3 are 29 and 27 steps old
+    assert f3["dest_inbound_transfer_count_24h"] == 0.0
+    assert f3["dest_has_prior_inbound_transfer"] == 1.0         # lifetime flag is never pruned
+    f4 = process_event(ev(31, "CASH_OUT", 5.0, "B", "X"), s)
+    assert f4["type_is_transfer"] == 0.0
+    assert f4["dest_inbound_transfer_count_24h"] == 0.0         # X has never received a transfer
 
 
 # 2. window boundary ---------------------------------------------------------------
@@ -73,8 +76,15 @@ def test_chain_hand_computed():
 def test_window_boundary(step, expected):
     s = DictStore()
     process_event(ev(1, "TRANSFER", 50.0, "A", "B"), s)
-    f = process_event(ev(step, "CASH_OUT", 50.0, "B", "X"), s)
-    assert f["orig_inbound_transfer_count_24h"] == expected
+    f = process_event(ev(step, "TRANSFER", 50.0, "C", "B"), s)
+    assert f["dest_inbound_transfer_count_24h"] == expected
+
+
+# 2b. the dropped origin-side chain features must stay dropped (EDA gate G2, 5 Nov 2026) -
+def test_origin_chain_features_absent():
+    assert len(FEATURE_NAMES) == 12
+    assert not [n for n in FEATURE_NAMES if "orig_inbound" in n or n == "amount_to_orig_inbound_sum"
+                or n == "steps_since_orig_last_inbound_transfer"]
 
 
 # 3. no future leakage: prefix invariance ------------------------------------------
@@ -141,9 +151,9 @@ def test_primed_replay_equals_batch():
     full, _ = build_feature_table(df)
     _, head_store = build_feature_table(df.iloc[:cut])
     tail = df.iloc[cut:]
-    needed = set(tail["nameOrig"]) | set(tail["nameDest"])
+    needed = set(tail["nameDest"])  # features read only the recipient's state
     primed = DictStore()
-    for name in needed:  # snapshot ONLY accounts that appear in the replay pool
+    for name in needed:  # snapshot ONLY recipient accounts of the replay-pool rows
         primed.put(name, head_store.get(name))
     tail_feats, _ = build_feature_table(tail, store=primed)
     pd.testing.assert_frame_equal(full.loc[tail_feats.index], tail_feats, check_exact=True)
@@ -160,7 +170,6 @@ def test_finite_names_scope_order():
     n_scoped = df["type"].isin(["TRANSFER", "CASH_OUT"]).sum()
     assert len(feats) == n_scoped
     assert feats["amount_to_orig_balance"].max() <= CONFIG.ratio_clip
-    assert feats["amount_to_orig_inbound_sum"].max() <= CONFIG.ratio_clip
 
 
 def test_out_of_order_rejected():
@@ -173,16 +182,16 @@ def test_out_of_order_rejected():
 def test_out_of_scope_not_scorable():
     e = ev(1, "PAYMENT", 5.0, "A", "M1")
     with pytest.raises(ValueError):
-        compute_features(e, AccountState(), AccountState())
+        compute_features(e, AccountState())
     assert process_event(e, DictStore()) is None
 
 
 def test_self_transfer_reads_state_before_update():
     s = DictStore()
     f = process_event(ev(1, "TRANSFER", 10.0, "A", "A"), s)
-    assert f["orig_inbound_transfer_count_24h"] == 0.0  # own credit not visible to itself
-    f2 = process_event(ev(2, "CASH_OUT", 10.0, "A", "X"), s)
-    assert f2["orig_inbound_transfer_count_24h"] == 1.0
+    assert f["dest_inbound_transfer_count_24h"] == 0.0  # own credit not visible to itself
+    f2 = process_event(ev(2, "TRANSFER", 10.0, "X", "A"), s)
+    assert f2["dest_inbound_transfer_count_24h"] == 1.0
 
 
 def test_event_rejects_nan():

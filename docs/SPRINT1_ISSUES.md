@@ -300,9 +300,9 @@ docker compose exec redis redis-cli keys "*"    # the session key exists after l
 **Acceptance criteria**
 - [ ] Peak memory and run time measured on the first 1M real rows, then on the full pass; numbers written in `docs/FEATURE_SPEC.md` section 6.
 - [ ] Features for all scored rows are cached as `data/cache/features_v<version>.parquet` (gitignored).
-- [ ] **Parity on real data:** state primed at the replay-pool boundary for the accounts in the replay pool reproduces the batch features with a maximum absolute difference of exactly `0.0`.
+- [ ] **Parity on real data:** state primed at the replay-pool boundary for the recipient accounts of the replay pool reproduces the batch features with a maximum absolute difference of exactly `0.0`.
 - [ ] The same parity test passes against the **real Redis-backed store** once it exists (until then, against the JSON stand-in).
-- [ ] If gate G2 (S1-06) failed, features 11 to 14 are dropped or kept per the rule in the spec, and the change is made in `FEATURE_SPEC.md` and `shared/features/` together.
+- [x] Gate G2 failed (5 Nov 2026): features 11 to 14 were dropped; the schema is now `0.2.0` with 12 features, already changed in `FEATURE_SPEC.md` and `shared/features/` together. Priming needs recipient accounts only.
 - [ ] `FEATURE_SCHEMA_VERSION` set to `1.0.0` and gate results filled in.
 
 **Files likely touched:** `shared/features/`, `docs/FEATURE_SPEC.md`, `notebooks/02_features.ipynb`, `tests/`.
@@ -350,7 +350,8 @@ python -m pytest tests/test_access_control.py -v
 - [ ] Hyperparameters chosen on the validation split. **The test split is evaluated once, at the end.**
 - [ ] Rule baselines R1, R2, R3 exactly as defined in `docs/FEATURE_SPEC.md` section 6.1, computed on the same test rows.
 - [ ] Results table: precision, recall, F1, PR-AUC (models only), confusion matrix; one version with all features and one **without the balance-consistency group**.
-- [ ] Every metric states its denominator (all rows vs `TRANSFER` + `CASH_OUT`).
+- [ ] Every metric states its denominator (all rows vs `TRANSFER` + `CASH_OUT`) **and the fraud base rate of the split it was computed on** (rates differ strongly between splits, so PR-AUC and precision are not comparable across them).
+- [ ] R1 is reported as supplied; it fires on only 16 rows in the whole dataset, so expect near-zero recall.
 - [ ] The artifact stores: feature names in order, `feature_schema_version`, the two tier thresholds (chosen on validation), library versions, `random_state`.
 - [ ] Artifacts in `data/models/` (gitignored); the table and a short interpretation committed under `docs/results/`.
 

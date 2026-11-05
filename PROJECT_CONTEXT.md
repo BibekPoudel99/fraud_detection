@@ -2,7 +2,7 @@
 
 *Purpose: give a fresh conversation everything it needs to continue this project without re-explaining background. Paste this file's contents (or upload it alongside README.md and data_loader.py) at the start of a new chat.*
 
-*Last updated: 2 Nov 2026 (README_PATCH applied: session mechanism corrected, rule baselines and claim wording locked, API contract / feature spec / Sprint 1 cards recorded).*
+*Last updated: 5 Nov 2026 (EDA notebook run on real data; gate G2 failed, so features 11 to 14 dropped and schema is now 0.2.0; detection-scope wording changed with Bibek's approval; split boundaries saved in `docs/split_boundaries.json`).*
 
 ---
 
@@ -25,7 +25,7 @@ Bibek, a BIT (Bachelor of Information Technology) student at **Himalayan Whiteho
 2. **`data_loader.py`** — standalone, working Python utility implementing Parquet caching for the PaySim CSV (reads CSV once, caches as Parquet, loads from cache on subsequent runs). Syntax-verified. Ready to drop into the repo as-is; imported via `from data_loader import load_paysim`.
 3. **`project-comparison-verified.md`** — historical document from the domain-selection stage (Fraud Detection vs. Agriculture). Superseded by README.md for anything it contradicts; useful only for the reasoning trail behind why fraud detection was chosen.
 4. **`docs/API_CONTRACT.md`** — the `/predict` request/response contract between `core-api`/workers and `inference-service` (named feature object, `feature_schema_version` check, tier thresholds returned by the service, error and retry rules, mock server for Members B and C). Draft v1.0, pending review.
-5. **`docs/FEATURE_SPEC.md`** — column-by-column feature spec, 16 candidate features, FIU-Nepal red-flag mapping (two of five representable), the single shared feature function (`compute_features` / `update_dest_state`), state and priming rules, seven EDA gates with pre-registered decision rules, rule baselines R1–R3. Draft 0.1 (schema `0.1.0`, frozen as `1.0.0` after the EDA gates run on the real data).
+5. **`docs/FEATURE_SPEC.md`** — column-by-column feature spec, 12 features (schema 0.2.0; four origin-side chain features dropped after gate G2), FIU-Nepal red-flag mapping (only one of five partly representable), the single shared feature function (`compute_features` / `update_dest_state`), state and priming rules, seven EDA gates with pre-registered decision rules, rule baselines R1–R3. Draft 0.2 (schema `0.2.0`, frozen as `1.0.0` after the real-data parity run, S1-09). Gate results G1 to G7 recorded in section 9.
 6. **`docs/SPRINT1_ISSUES.md`** — 12 ready-to-paste GitHub issue cards (S1-00 to S1-11).
 7. **Shared code bundle** (`shared/schemas/predict.py`, `shared/features/`, `tools/mock_inference.py`, `tests/`) — written to accompany the two specs; 29 tests pass on synthetic data; the mock-server test has not been run yet. Lands in the repo via issue S1-01.
 
@@ -68,8 +68,8 @@ All below are final decisions with rationale documented in README.md Section 5:
 - **Models:** Logistic Regression (baseline, `class_weight='balanced'`) vs. Random Forest (`class_weight='balanced'` or SMOTE on train split only) vs. XGBoost (`scale_pos_weight`) — full rationale and comparison table structure already in README Section 8. **Plus rule baselines R1–R3** as extra comparison rows (R1 = PaySim's own `isFlaggedFraud` rule; R2 = account drained; R3 = drained and amount above 200,000, a figure borrowed from R1, not tuned) — defined in `docs/FEATURE_SPEC.md` section 6.1 and fixed before the test split is read.
 - **Scope gate:** only `TRANSFER` and `CASH_OUT` transactions are scored; other types are not sent to `/predict`. Metrics state their denominator (all rows vs. scoped rows).
 - **"Real-time" framing — locked, precise language for the report:** *"The prototype performs near-real-time transaction monitoring by ingesting individual transaction events through a streaming layer and producing a fraud-risk decision during the transaction-processing workflow, with end-to-end decision latency measured empirically on the deployed system."* Never claim production throughput, sub-millisecond latency, or uptime SLAs.
-- **Detection scope — locked, precise language:** account-takeover-style fund-draining fraud, evidenced by transfer-then-cash-out — not fraud detection in general. NEPSE side is "illustrative market-activity anomaly flagging," never called "fraud detection."
-- **Claim wording — locked 2 Nov 2026:** the platform is demonstrated on the account-takeover transfer-then-cash-out pattern using synthetic PaySim data. Results show the pipeline works; they are not evidence about fraud in Nepali mobile-banking or wallet traffic. Applicability to Nepali traffic needs a real Nepali dataset and a model trained on it (future work, README 11.1 item 6).
+- **Detection scope — locked, precise language:** fraud transactions of type TRANSFER and CASH_OUT as labelled by PaySim, which simulates account-takeover fund-draining; the two legs are not linked at the account level in the dataset (EDA gate G2), so the features do not model the chain — not fraud detection in general. (Reworded 5 Nov 2026, approved by Bibek.) NEPSE side is "illustrative market-activity anomaly flagging," never called "fraud detection."
+- **Claim wording — locked 2 Nov 2026:** the platform is demonstrated on PaySim's TRANSFER and CASH_OUT fraud labels using synthetic data. Results show the pipeline works; they are not evidence about fraud in Nepali mobile-banking or wallet traffic. Applicability to Nepali traffic needs a real Nepali dataset and a model trained on it (future work, README 11.1 item 6).
 - **Title decision already made and closed:** "Real-Time..." kept over "Smart..." — "smart" was rejected as a content-free word inviting an unanswerable viva question; "real-time" is earned and defensible given the architecture above. Do not revisit unless Bibek raises it again.
 
 ## Local development utility — built
@@ -98,7 +98,7 @@ Includes: the verified NRB Regulatory Sandbox pathway (guidelines effective 14 M
 - [x] Proposal defended with supervisor
 - [x] Backend framework decision confirmed with supervisor (FastAPI only)
 - [x] Full architecture locked, with rationale documented (Section 5 of README)
-- [x] Detection scope precisely defined (transfer-then-cash-out account takeover only)
+- [x] Detection scope precisely defined (PaySim-labelled TRANSFER and CASH_OUT fraud only; reworded 5 Nov 2026 after G2)
 - [x] "Real-time" claim precisely defined and defensible (mechanism + measured-latency framing)
 - [x] Parquet-caching data-loading utility built and run successfully on the real PaySim CSV
 - [x] GitHub repo created and shared with collaborators; scaffold, CONTRIBUTING.md and `docs/TASKS.md` written
@@ -108,12 +108,13 @@ Includes: the verified NRB Regulatory Sandbox pathway (guidelines effective 14 M
 - [x] Sprint 1 issue cards written, `docs/SPRINT1_ISSUES.md` (2 Nov 2026)
 - [x] Claim wording, scope gate and rule baselines locked (2 Nov 2026)
 - [x] Session mechanism corrected in README 5.2 (2 Nov 2026)
+- [x] EDA notebook built and run on the real data (5 Nov 2026): G1 to G7 recorded, split saved. **G2 failed: features 11 to 14 dropped, schema 0.2.0.** Finding: base rates differ strongly between splits (replay pool 2.07%); R1 fires on only 16 rows.
 
 **Not yet done — next steps, roughly in order:**
 1. **NEPSE data source decision** — see the pinned section below. Non-blocking for Flow A.
 2. Merge the contracts and shared code (issue S1-01); run `tests/test_mock_inference.py` on a real machine (never run yet).
 3. Full ER diagram / database schema (SQLAlchemy models) for `users`, `roles`, `transactions`, `fraud_predictions`, `model_versions`, `audit_logs`, `etl_runs`, `investigation_notes`, `watchlist` (sessions live in Redis) — issue S1-05.
-4. EDA notebook and four-way split (S1-06): run EDA gates G1–G7, which decide which candidate features survive; then run the feature function on the real data and freeze `feature_schema_version` at `1.0.0` (S1-09).
+4. **Next: S1-09.** Run the 0.2.0 feature function on the real data (parity test on the real replay pool, peak memory) and freeze `feature_schema_version` at `1.0.0`. (EDA/split S1-06 is done.)
 5. Model training notebook: baseline + Random Forest + XGBoost on PaySim, with the four-way split, imbalance handling per model, rule baselines R1–R3, with-and-without the balance-consistency feature group, and the full evaluation-metrics table (baseline part is S1-11).
 6. `inference-service` FastAPI app: load trained model artifact, `/predict` endpoint, Pydantic request/response schemas (`shared/schemas/predict.py`).
 7. `core-api` FastAPI app: auth (session + Redis), RBAC, CRUD entities, dashboards (Jinja2), file upload (Flow C), WebSocket push endpoint.

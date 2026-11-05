@@ -14,7 +14,7 @@ Nepal's digital payment ecosystem — led by platforms such as eSewa and IME Pay
 
 This project designs and implements such a system: a role-based, three-tier transaction-monitoring platform, built entirely on FastAPI, that trains and compares supervised machine-learning models on a labeled transaction dataset (PaySim), exposes the best model through a real-time, event-driven inference pipeline with measured end-to-end latency, logs every prediction for auditability, and routes suspicious transactions to a human fraud analyst for review. A batch/on-demand upload pathway allows an analyst to score an uploaded transaction file outside the live stream. A secondary, architecturally-separate module demonstrates the same real-time ingestion pipeline operating on a genuine live Nepali data source — the NEPSE stock exchange floorsheet — using lightweight statistical anomaly detection, to validate that the streaming architecture functions on real external data rather than only on replayed historical records.
 
-**Detection scope, stated precisely:** this system detects **account-takeover-style fund-draining fraud, evidenced by a transfer-then-cash-out pattern** — the specific pattern PaySim's `isFraud` label represents (labels only ever appear on `TRANSFER` and `CASH_OUT` transactions), which corresponds closely to a red flag FIU-Nepal explicitly documents ("transfers followed by immediate withdrawals"). It does not detect card-present fraud, merchant/POS fraud, loan fraud, money-laundering networks, or synthetic identity fraud.
+**Detection scope, stated precisely:** this system detects **fraud transactions of type `TRANSFER` and `CASH_OUT` as labelled by PaySim**, which simulates account-takeover fund-draining (labels only ever appear on those two types). The two legs are not linked at the account level in the dataset (EDA gate G2: none of the 1,826 fraud cash-outs in the training split follows an inbound transfer to the same account within 24 hours), so the features do not model the transfer-then-withdrawal chain that FIU-Nepal documents as a red flag. It does not detect card-present fraud, merchant/POS fraud, loan fraud, money-laundering networks, or synthetic identity fraud.
 
 ---
 
@@ -51,7 +51,7 @@ All sources below were independently verified (existence, authorship, and claims
 ## 4. Objectives
 
 1. Design and implement a secure three-tier web application — presentation, application/business logic, and PostgreSQL data tier — built entirely on **FastAPI**, with role-based access control across three roles: **Admin**, **Fraud Analyst**, and **Customer**.
-2. Build a reproducible ETL and feature-engineering pipeline on the PaySim dataset, with behavioral features informed by FIU-Nepal's documented red flags.
+2. Build a reproducible ETL and feature-engineering pipeline on the PaySim dataset, with behavioral features informed by FIU-Nepal's documented red flags where PaySim can represent them (only partly; see Section 10).
 3. Train and compare a baseline (Logistic Regression) against Random Forest and XGBoost for fraud classification under severe class imbalance, using a documented, leakage-free train/validation/test/replay-pool split.
 4. Evaluate all models using precision, recall, F1-score, PR-AUC, and a confusion matrix; present a full model-comparison table.
 5. Expose the best-performing model through a dedicated **inference microservice** (a second FastAPI service), called from the main application over internal HTTP, returning a fraud probability per transaction.
@@ -380,8 +380,8 @@ Satisfies the spec's compulsory file-upload requirement (Section 3.6). Uploaded 
 | Logistic Regression | Baseline — establishes the floor every other model must beat | `class_weight='balanced'` |
 | Random Forest | Model 1 — non-linear feature interactions, free feature importances | `class_weight='balanced'` or SMOTE fitted on training split only |
 | XGBoost | Model 2 — strongest expected performer on severely imbalanced tabular data; matches the approach used in the PaySim-adjacent literature (Hajek et al.) | `scale_pos_weight` (ratio of legitimate:fraud in training set) |
-| Rule baseline R1 (`isFlaggedFraud`) | The simulator's own static rule (a single transfer above 200,000); used as supplied, never as a model feature | n/a (rule) |
-| Rule baselines R2, R3 (drain; drain + bulk) | Hand-written reference rules: the account is drained, and drained with `amount > 200,000` (figure borrowed from R1, not tuned on our data). They show what static rules achieve and test the "account-draining" hypothesis | n/a (rule) |
+| Rule baseline R1 (`isFlaggedFraud`) | The simulator's own flag, used as supplied, never as a model feature. It is set on only 16 of 6.36M rows, so near-zero recall is expected and will be reported as is | n/a (rule) |
+| Rule baselines R2, R3 (drain; drain + bulk) | Hand-written reference rules: the account is drained, and drained with `amount > 200,000` (figure borrowed from PaySim's documentation, not tuned on our data; on the training split it roughly halves false positives but loses about a third of the fraud relative to R2). They show what static rules achieve and test the "account-draining" hypothesis | n/a (rule) |
 
 Whichever imbalance method is used per model must be documented and reproducible (random seed, library versions) per spec Section 5.2.
 
@@ -400,9 +400,12 @@ Rule baselines are fixed before the test split is read and are compared on the s
 
 ## 10. Limitations
 
-- **What the results do and do not show.** The platform is demonstrated on the account-takeover transfer-then-cash-out pattern using synthetic PaySim data. Results show that the pipeline works; they are not evidence about fraud in Nepali mobile-banking or wallet traffic.
+- **What the results do and do not show.** The platform is demonstrated on PaySim's `TRANSFER` and `CASH_OUT` fraud labels using synthetic data. Results show that the pipeline works; they are not evidence about fraud in Nepali mobile-banking or wallet traffic.
 - PaySim is synthetic, mobile-money-modeled data — not Nepalese financial data. More specifically, its underlying simulation is modeled on mobile-money behavior in an African market context, so timing norms, amount distributions, and velocity baselines may not transfer even qualitatively to Nepali usage patterns, independent of the synthetic-vs-real distinction alone.
-- Detection scope is narrow by design: transfer-then-cash-out account-takeover fraud only, not fraud in general.
+- Detection scope is narrow by design: PaySim-labelled `TRANSFER` and `CASH_OUT` fraud only, not fraud in general.
+- **The transfer-then-withdrawal chain is not recoverable from PaySim.** Pre-registered EDA gate G2 failed on the training split, so the four account-linked chain features were dropped (feature schema 0.2.0). Of the five FIU-Nepal red flags, only "behaviour inconsistent with profile" is partly represented (balance-relative size).
+- **Base rates differ strongly between splits.** Fraud is about 11 per step in every split while transaction volume per step falls, so the later splits have a higher fraud rate (the replay pool is 2.07%, versus 0.30% over scoped rows overall). Precision and PR-AUC are therefore not comparable across splits; every reported metric states its split's prevalence.
+- The simulator's own `isFlaggedFraud` flag fires on only 16 rows, so baseline R1 is expected to be nearly useless; this is reported, not hidden.
 - The NEPSE anomaly module has no confirmed fraud/manipulation labels.
 - The unofficial NEPSE API is third-party, rate-limited, "educational use only" — mitigated via local caching.
 - "Real-time" means measured near-real-time event processing at student-project scale, not production banking-grade throughput or latency guarantees.
@@ -417,6 +420,7 @@ Rule baselines are fixed before the test split is read and are compared on the s
 4. Concept-drift / behavioral-drift monitoring.
 5. Cost-sensitive decisioning.
 6. **Real Nepali transaction data and a model trained on it.** Obtain a real, consented Nepali digital-payment dataset (for example through the NRB Regulatory Sandbox pathway in 11.2), re-derive features for it, and retrain and re-evaluate. Until then, no claim is made about detection performance on Nepali traffic.
+7. **Account-linked chain features on real data.** With real, account-linked transactions, revisit the transfer-then-withdrawal features dropped after EDA gate G2.
 
 ### 11.2 Path to production-grade banking deployment
 
