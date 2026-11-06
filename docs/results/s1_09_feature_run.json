@@ -1,0 +1,126 @@
+{
+  "run_at_utc": "2026-11-06T07:14:55+00:00",
+  "notebook": "notebooks/02_features_and_parity.ipynb",
+  "feature_schema_version": "0.2.0",
+  "environment": {
+    "python": "3.11.5",
+    "pandas": "3.0.5",
+    "numpy": "2.4.6",
+    "platform": "Windows-10-10.0.26300-SP0"
+  },
+  "config": {
+    "validate": true,
+    "sample_rows": 1000000,
+    "window_steps": 24,
+    "ratio_clip": 10.0
+  },
+  "data": {
+    "rows": 6362620,
+    "scored_rows": 2770409,
+    "replay_start_row": 6040750,
+    "replay_start_source": "splits.replay.row_start",
+    "replay_rows": 321870,
+    "replay_scored_rows": 133794
+  },
+  "cost": {
+    "first_1M": {
+      "label": "first_1M",
+      "validate": true,
+      "rows": 1000000,
+      "scored_rows": 445100,
+      "seconds": 8.2,
+      "rows_per_second": 122670,
+      "rss_before_mb": 1950,
+      "rss_peak_sampled_mb": 1950,
+      "rss_growth_mb": 0,
+      "lifetime_peak_rss_mb": 2009,
+      "state_accounts": 38876
+    },
+    "full": {
+      "label": "full",
+      "validate": true,
+      "rows": 6362620,
+      "scored_rows": 2770409,
+      "seconds": 79.7,
+      "rows_per_second": 79875,
+      "rss_before_mb": 1332,
+      "rss_peak_sampled_mb": 3047,
+      "rss_growth_mb": 1715,
+      "lifetime_peak_rss_mb": 3113,
+      "state_accounts": 237006
+    },
+    "state_accounts_after_full_pass": 237006
+  },
+  "parity": {
+    "max_abs_diff": 0.0,
+    "bitwise_equal": true,
+    "primed_accounts": 50325,
+    "replay_recipients": 119253,
+    "prefix_head_diff": 0.0,
+    "validate_false_diff": 0.0,
+    "cold_start_rows_differing": 55474,
+    "cold_start_by_column": {
+      "dest_inbound_transfer_count_24h": 24,
+      "dest_has_prior_inbound_transfer": 55474
+    }
+  },
+  "features_sha256": "5f102f58ba3618731f95a07f6834a068e618736a9f274e26ef52156ca83adea9",
+  "cache_file": "data/cache/features_v0.2.0.parquet",
+  "gates": [
+    {
+      "gate": "F1",
+      "question": "Schema and feature list as pre-registered?",
+      "result": "PASS",
+      "detail": "schema 0.2.0, 12 features, no origin-side chain features"
+    },
+    {
+      "gate": "F2",
+      "question": "Row count equals the data_loader.py run on the real CSV?",
+      "result": "PASS",
+      "detail": "6,362,620 rows (expected 6,362,620)"
+    },
+    {
+      "gate": "F5",
+      "question": "Trusted path (validate=False) equals the validated path on the first 1M rows?",
+      "result": "PASS",
+      "detail": "max abs diff 0.0"
+    },
+    {
+      "gate": "F3",
+      "question": "Feature table well-formed (columns, rows, finite, ranges)?",
+      "result": "PASS",
+      "detail": "2,770,409 rows x 12 columns; failed: none"
+    },
+    {
+      "gate": "F4a",
+      "question": "First-1M features equal the same rows from the full pass (no future leakage, FEATURE_SPEC test 3 on real data)?",
+      "result": "PASS",
+      "detail": "max abs diff 0.0"
+    },
+    {
+      "gate": "F6",
+      "question": "Cache data/cache/features_v0.2.0.parquet reads back identical?",
+      "result": "PASS",
+      "detail": "max abs diff 0.0; 81 MB on disk"
+    },
+    {
+      "gate": "F4b",
+      "question": "Head-only features equal the same rows from the full pass (prefix property, real data)?",
+      "result": "PASS",
+      "detail": "max abs diff 0.0"
+    },
+    {
+      "gate": "F7",
+      "question": "Primed stream features equal the batch features on the real replay pool (exactly)?",
+      "result": "PASS",
+      "detail": "133,794 scored replay rows; max abs diff 0.0; primed accounts 50,325"
+    },
+    {
+      "gate": "F8",
+      "question": "Control: does an unprimed (cold-start) stream differ, so the parity test has power?",
+      "result": "PASS",
+      "detail": "55,474 of 133,794 rows differ, columns ['dest_has_prior_inbound_transfer', 'dest_inbound_transfer_count_24h']"
+    }
+  ],
+  "ready_to_freeze": true
+}
